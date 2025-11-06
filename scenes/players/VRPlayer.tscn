@@ -117,6 +117,7 @@ metadata/_custom_type_script = "uid://gvf05fwc3p2p"
 [node name="VRIKComponent" type="Node" parent="."]
 script = ExtResource("4_3ifg7")
 skeletal_mesh_scene = ExtResource("5_xi0i4")
+body_forward_offset = 0.15
 hand_rotation_x = -91.59
 hand_rotation_y = 73.175
 hand_rotation_z = -51.255

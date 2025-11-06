@@ -29,7 +29,10 @@ class_name VRIKComponent
 
 # Body positioning
 @export_group("Body Settings")
+## Enable to parent skeleton to VRLocomotion physics capsule. When enabled, skeleton rotates with snap turns and moves with player locomotion. Disable for standalone use without VRLocomotion (e.g., seated VR).
+@export var use_locomotion_integration: bool = true
 @export var body_height_offset: float = 0.0  # Adjust body height relative to HMD
+@export var body_forward_offset: float = 0.0  # Adjust body forward/backward position (positive = forward, negative = backward)
 @export var align_skeleton_with_hmd: bool = true  # Automatically rotate skeleton to face HMD direction
 @export var neck_offset: Vector3 = Vector3(0, -0.15, 0)  # Offset from HMD to neck
 
@@ -119,6 +122,7 @@ var smoothed_right_hand_transform: Transform3D
 
 # Initialization
 var initialized: bool = false
+var skeleton_needs_reparenting: bool = false
 
 # Debug visualization
 var left_hand_axes: Node3D
@@ -299,6 +303,10 @@ func _process(delta: float):
 	if Engine.is_editor_hint() or not initialized or not skeleton:
 		return
 	
+	# Try to reparent skeleton to physics body if needed
+	if skeleton_needs_reparenting:
+		_try_reparent_to_physics_body()
+	
 	# Check for debug button press (Y button on right controller = by_button)
 	if debug_on_button_press and right_controller:
 		debug_button_pressed = right_controller.is_button_pressed("by_button")
@@ -428,15 +436,50 @@ func _update_hand_tracking():
 		right_arm_ik.start()
 
 func _update_body_position():
-	if not skeleton or not xr_camera:
+	if not skeleton_instance or not xr_camera:
 		return
 	
-	# Position the skeleton at the XR origin (player position)
-	var body_pos = xr_origin.global_position
-	body_pos.y += body_height_offset  # Optional adjustment if needed
+	# Check if skeleton is parented to physics body or XROrigin
+	var physics_body = _find_physics_body()
+	var is_parented_to_capsule = (skeleton_instance.get_parent() == physics_body)
 	
-	# Update skeleton position
-	if skeleton_instance:
+	if is_parented_to_capsule and physics_body:
+		# Skeleton is child of physics body - use local positioning
+		# The skeleton moves and rotates with the capsule automatically
+		
+		# Set local position relative to capsule
+		var local_pos = Vector3.ZERO
+		local_pos.y = body_height_offset
+		
+		# Apply forward offset in the skeleton's local forward direction
+		# Get the skeleton's forward direction after rotation (local -Z axis)
+		if abs(body_forward_offset) > 0.001:
+			var skeleton_local_forward = -skeleton_instance.transform.basis.z
+			local_pos += skeleton_local_forward * body_forward_offset
+		
+		skeleton_instance.position = local_pos
+		
+		# Optionally update rotation to follow HMD yaw (relative to capsule)
+		if align_skeleton_with_hmd:
+			# Get HMD forward direction
+			var hmd_forward = -xr_camera.global_transform.basis.z
+			hmd_forward.y = 0
+			if hmd_forward.length() > 0.001:
+				hmd_forward = hmd_forward.normalized()
+				
+				# Get capsule forward direction
+				var capsule_forward = -physics_body.global_transform.basis.z
+				capsule_forward.y = 0
+				capsule_forward = capsule_forward.normalized()
+				
+				# Calculate relative angle between HMD and capsule (add 180° to face forward)
+				var angle = capsule_forward.signed_angle_to(hmd_forward, Vector3.UP)
+				skeleton_instance.rotation.y = angle + PI
+	else:
+		# Fallback: skeleton is child of XROrigin - use global positioning
+		var body_pos = xr_origin.global_position
+		body_pos.y += body_height_offset
+		
 		skeleton_instance.global_position = body_pos
 		
 		# Optionally update rotation to follow HMD yaw
@@ -472,20 +515,60 @@ func _load_skeletal_mesh():
 	
 	# Instance the skeletal mesh
 	skeleton_instance = skeletal_mesh_scene.instantiate()
-	xr_origin.add_child(skeleton_instance)
 	skeleton_instance.name = "SkeletalMesh_IK"
 	
-	# Align skeleton with HMD direction if enabled
-	if align_skeleton_with_hmd and xr_camera:
-		# Get HMD forward direction (projected onto XZ plane)
-		var hmd_forward = -xr_camera.global_transform.basis.z
-		hmd_forward.y = 0
-		hmd_forward = hmd_forward.normalized()
+	# Try to find the physics body (capsule) to parent to if integration is enabled
+	var physics_body = _find_physics_body() if use_locomotion_integration else null
+	if physics_body:
+		# Parent to the physics body so skeleton rotates with snap turns
+		physics_body.add_child(skeleton_instance)
+		skeleton_needs_reparenting = false
 		
-		# Calculate rotation to align skeleton forward with HMD forward
-		var skeleton_forward = -Vector3.FORWARD  # Skeleton's default forward
-		var angle = skeleton_forward.signed_angle_to(hmd_forward, Vector3.UP)
-		skeleton_instance.rotation.y = angle
+		# Set initial local rotation relative to capsule
+		if align_skeleton_with_hmd and xr_camera:
+			# Get HMD forward direction
+			var hmd_forward = -xr_camera.global_transform.basis.z
+			hmd_forward.y = 0
+			hmd_forward = hmd_forward.normalized()
+			
+			# Get capsule forward direction
+			var capsule_forward = -physics_body.global_transform.basis.z
+			capsule_forward.y = 0
+			capsule_forward = capsule_forward.normalized()
+			
+			# Calculate relative angle (add 180 to face forward)
+			var angle = capsule_forward.signed_angle_to(hmd_forward, Vector3.UP)
+			skeleton_instance.rotation.y = angle + PI
+		else:
+			# No HMD alignment - face forward relative to capsule (180° from default)
+			skeleton_instance.rotation.y = PI
+		
+		if show_debug:
+			print("VRIKComponent: Skeleton parented to physics body (locomotion integration)")
+	else:
+		# Physics body doesn't exist yet or integration disabled - parent to XROrigin
+		xr_origin.add_child(skeleton_instance)
+		skeleton_needs_reparenting = use_locomotion_integration  # Only retry if integration is enabled
+		
+		# Set initial global rotation based on HMD
+		if align_skeleton_with_hmd and xr_camera:
+			var hmd_forward = -xr_camera.global_transform.basis.z
+			hmd_forward.y = 0
+			hmd_forward = hmd_forward.normalized()
+			
+			var skeleton_forward = -Vector3.FORWARD
+			var angle = skeleton_forward.signed_angle_to(hmd_forward, Vector3.UP)
+			skeleton_instance.rotation.y = angle
+		
+		if show_debug:
+			if use_locomotion_integration:
+				print("VRIKComponent: Physics body not found yet, will retry reparenting...")
+			else:
+				print("VRIKComponent: Skeleton parented to XROrigin (locomotion integration disabled)")
+	
+	# No longer need this block - rotation is handled above
+	# Align skeleton with HMD direction if enabled
+	# if align_skeleton_with_hmd and xr_camera:
 	
 	# Find the Skeleton3D in the instance
 	skeleton = _find_skeleton_recursive(skeleton_instance)
@@ -619,6 +702,67 @@ func _find_skeleton_recursive(node: Node) -> Skeleton3D:
 			return result
 	
 	return null
+
+## Find the physics body (capsule) created by VRLocomotion
+func _find_physics_body() -> CharacterBody3D:
+	# The physics body is typically added to XROrigin's parent
+	if not xr_origin:
+		return null
+	
+	var parent = xr_origin.get_parent()
+	if not parent:
+		return null
+	
+	# Look for a CharacterBody3D named "PhysicsBody"
+	for child in parent.get_children():
+		if child is CharacterBody3D and child.name == "PhysicsBody":
+			return child
+	
+	return null
+
+## Try to reparent skeleton to physics body if it becomes available
+func _try_reparent_to_physics_body():
+	if not skeleton_instance or not skeleton_needs_reparenting or not use_locomotion_integration:
+		return
+	
+	var physics_body = _find_physics_body()
+	if physics_body:
+		# Physics body now exists! Reparent the skeleton
+		# Store the current global position we want to keep
+		var current_global_pos = skeleton_instance.global_position
+		
+		# Remove from current parent
+		skeleton_instance.get_parent().remove_child(skeleton_instance)
+		
+		# Add to physics body
+		physics_body.add_child(skeleton_instance)
+		
+		# Convert global rotation to local rotation relative to physics body
+		if align_skeleton_with_hmd and xr_camera:
+			# Recalculate rotation relative to capsule
+			var hmd_forward = -xr_camera.global_transform.basis.z
+			hmd_forward.y = 0
+			hmd_forward = hmd_forward.normalized()
+			
+			var capsule_forward = -physics_body.global_transform.basis.z
+			capsule_forward.y = 0
+			capsule_forward = capsule_forward.normalized()
+			
+			var angle = capsule_forward.signed_angle_to(hmd_forward, Vector3.UP)
+			skeleton_instance.rotation.y = angle + PI
+		else:
+			# Just face forward relative to capsule (180° from default)
+			skeleton_instance.rotation.y = PI
+		
+		# Keep the same global position
+		skeleton_instance.global_position = current_global_pos
+		
+		skeleton_needs_reparenting = false
+		
+		if show_debug:
+			print("VRIKComponent: Successfully reparented skeleton to physics body!")
+			print("  Skeleton local rotation Y: ", skeleton_instance.rotation_degrees.y)
+			print("  Physics body rotation Y: ", physics_body.rotation_degrees.y)
 
 ## Print all available bones in the skeleton
 func _print_all_bones():

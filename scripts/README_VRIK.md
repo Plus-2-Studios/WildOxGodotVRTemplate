@@ -29,9 +29,16 @@ That's it! Your skeletal mesh will follow your VR movements with proper arm IK.
 
 The component uses Godot's built-in `SkeletonIK3D` nodes for arm tracking:
 - **SkeletonIK3D** is created for each arm chain (upper arm → forearm → hand)
-- **IK targets** follow your VR controllers with rotation offsets applied
+- **IK targets** follow your VR controllers with rotation and position offsets applied
 - **Magnet property** pulls elbows downward for natural arm poses
 - Shoulders remain fixed while arms bend naturally to reach targets
+
+### Integration with VRLocomotion
+- Enable **Use Locomotion Integration** to parent the skeleton to the VRLocomotion physics capsule
+- When enabled, the skeleton automatically rotates with snap turns and moves with the player
+- The skeleton position is calculated relative to the capsule, not the XROrigin
+- If disabled or no physics body is found, the skeleton parents to XROrigin (standalone mode)
+- This allows VRIKComponent to work both with and without VRLocomotion
 
 ## Settings
 
@@ -46,7 +53,9 @@ The component uses Godot's built-in `SkeletonIK3D` nodes for arm tracking:
 - **Smoothing Speed:** Higher = snappier (try 10-20)
 
 ### Body Settings
+- **Use Locomotion Integration:** Enable to parent skeleton to VRLocomotion physics capsule (enables rotation with snap turns)
 - **Body Height Offset:** Vertical position adjustment (start with 0, adjust as needed)
+- **Body Forward Offset:** Forward/backward position adjustment relative to skeleton facing (positive = forward, negative = backward)
 - **Align Skeleton With HMD:** Rotate skeleton to face HMD direction
 - **Neck Offset:** Offset from HMD to neck position
 
