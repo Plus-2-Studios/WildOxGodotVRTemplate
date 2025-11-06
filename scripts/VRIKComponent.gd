@@ -34,6 +34,8 @@ class_name VRIKComponent
 @export var body_height_offset: float = 0.0  # Adjust body height relative to HMD
 @export var body_forward_offset: float = 0.0  # Adjust body forward/backward position (positive = forward, negative = backward)
 @export var align_skeleton_with_hmd: bool = true  # Automatically rotate skeleton to face HMD direction
+@export var hmd_rotation_deadzone: float = 45.0  # Degrees of HMD rotation before body starts rotating (0 = always rotate, 180 = never rotate)
+@export var body_rotation_smoothing: float = 5.0  # How smoothly the body rotates to follow HMD (higher = faster)
 @export var neck_offset: Vector3 = Vector3(0, -0.15, 0)  # Offset from HMD to neck
 
 @export_group("Hand Orientation (Euler XYZ)")
@@ -119,6 +121,11 @@ var right_hand_target: Node3D
 var smoothed_head_transform: Transform3D
 var smoothed_left_hand_transform: Transform3D
 var smoothed_right_hand_transform: Transform3D
+
+# Body rotation tracking
+var target_body_rotation_y: float = 0.0  # Target rotation for the body
+var current_body_rotation_y: float = 0.0  # Current smoothed rotation
+var last_physics_body_rotation_y: float = 0.0  # Track physics body rotation to detect snap turns
 
 # Initialization
 var initialized: bool = false
@@ -461,6 +468,17 @@ func _update_body_position():
 		
 		# Optionally update rotation to follow HMD yaw (relative to capsule)
 		if align_skeleton_with_hmd:
+			# Detect if physics body was rotated externally (e.g., snap turn)
+			var current_physics_rotation = physics_body.global_rotation.y
+			var rotation_delta = abs(current_physics_rotation - last_physics_body_rotation_y)
+			if rotation_delta > 0.01:  # Threshold to detect snap turns
+				# Physics body was rotated - reset our rotation tracking
+				# Keep the skeleton's current relative rotation
+				var skeleton_relative_rotation = skeleton_instance.rotation.y - PI
+				current_body_rotation_y = skeleton_relative_rotation
+				target_body_rotation_y = skeleton_relative_rotation
+				last_physics_body_rotation_y = current_physics_rotation
+			
 			# Get HMD forward direction
 			var hmd_forward = -xr_camera.global_transform.basis.z
 			hmd_forward.y = 0
@@ -472,9 +490,30 @@ func _update_body_position():
 				capsule_forward.y = 0
 				capsule_forward = capsule_forward.normalized()
 				
-				# Calculate relative angle between HMD and capsule (add 180° to face forward)
-				var angle = capsule_forward.signed_angle_to(hmd_forward, Vector3.UP)
-				skeleton_instance.rotation.y = angle + PI
+				# Calculate angle between HMD and current body rotation
+				var hmd_angle = capsule_forward.signed_angle_to(hmd_forward, Vector3.UP)
+				var current_angle = skeleton_instance.rotation.y - PI  # Remove the 180° offset to get relative angle
+				
+				# Calculate angle difference
+				var angle_diff = hmd_angle - current_angle
+				# Normalize to -PI to PI range
+				while angle_diff > PI:
+					angle_diff -= TAU
+				while angle_diff < -PI:
+					angle_diff += TAU
+				
+				# Apply deadzone - only update target if outside deadzone
+				var deadzone_rad = deg_to_rad(hmd_rotation_deadzone)
+				if abs(angle_diff) > deadzone_rad:
+					# Outside deadzone - update target rotation
+					target_body_rotation_y = hmd_angle
+				
+				# Smoothly interpolate current rotation toward target
+				var rotation_speed = body_rotation_smoothing * get_process_delta_time()
+				current_body_rotation_y = lerp_angle(current_body_rotation_y, target_body_rotation_y, rotation_speed)
+				
+				# Apply the rotation (add 180° to face forward)
+				skeleton_instance.rotation.y = current_body_rotation_y + PI
 	else:
 		# Fallback: skeleton is child of XROrigin - use global positioning
 		var body_pos = xr_origin.global_position
@@ -488,9 +527,27 @@ func _update_body_position():
 			hmd_forward.y = 0
 			if hmd_forward.length() > 0.001:
 				hmd_forward = hmd_forward.normalized()
-				var skeleton_forward = -Vector3.FORWARD
-				var angle = skeleton_forward.signed_angle_to(hmd_forward, Vector3.UP)
-				skeleton_instance.rotation.y = angle
+				
+				# Get current skeleton forward direction
+				var skeleton_forward = -skeleton_instance.global_transform.basis.z
+				skeleton_forward.y = 0
+				skeleton_forward = skeleton_forward.normalized()
+				
+				# Calculate angle between HMD and current body rotation
+				var hmd_angle = skeleton_forward.signed_angle_to(hmd_forward, Vector3.UP)
+				
+				# Apply deadzone - only update target if outside deadzone
+				var deadzone_rad = deg_to_rad(hmd_rotation_deadzone)
+				if abs(hmd_angle) > deadzone_rad:
+					# Outside deadzone - update target rotation
+					target_body_rotation_y = skeleton_instance.rotation.y + hmd_angle
+				
+				# Smoothly interpolate current rotation toward target
+				var rotation_speed = body_rotation_smoothing * get_process_delta_time()
+				current_body_rotation_y = lerp_angle(current_body_rotation_y, target_body_rotation_y, rotation_speed)
+				
+				# Apply the rotation
+				skeleton_instance.rotation.y = current_body_rotation_y
 
 ## Set the skeletal mesh to be controlled by this IK system
 func set_skeleton_mesh(new_skeleton: Skeleton3D):
