@@ -130,6 +130,7 @@ var last_physics_body_rotation_y: float = 0.0  # Track physics body rotation to 
 # Initialization
 var initialized: bool = false
 var skeleton_needs_reparenting: bool = false
+var ik_configured: bool = false  # Track if IK nodes are fully configured
 
 # Debug visualization
 var left_hand_axes: Node3D
@@ -272,39 +273,59 @@ func _setup_skeleton_ik():
 	if left_arm_bone_idx >= 0 and left_hand_bone_idx >= 0:
 		left_arm_ik = SkeletonIK3D.new()
 		left_arm_ik.name = "LeftArmIK"
-		skeleton.add_child(left_arm_ik)
 		
-		# Configure IK chain - start from upper arm, not shoulder
+		# Configure BEFORE adding to skeleton to avoid build_chain() errors
 		left_arm_ik.root_bone = skeleton.get_bone_name(left_arm_bone_idx)
 		left_arm_ik.tip_bone = skeleton.get_bone_name(left_hand_bone_idx)
-		left_arm_ik.target_node = left_arm_ik.get_path_to(left_hand_target)
-		left_arm_ik.use_magnet = true
-		left_arm_ik.magnet = Vector3(0, -1, 0)  # Pull elbow downward
-		left_arm_ik.min_distance = 0.01
-		left_arm_ik.max_iterations = 100
-		left_arm_ik.interpolation = 1.0
 		
-		if show_debug:
-			print("Left arm IK created: ", left_arm_ik.root_bone, " -> ", left_arm_ik.tip_bone)
+		# Now add to skeleton (this will trigger build_chain())
+		skeleton.add_child(left_arm_ik)
+		
+		# Finish configuration after being added to tree
+		call_deferred("_finalize_arm_ik", left_arm_ik, "Left")
 	
 	# Setup right arm IK
 	if right_arm_bone_idx >= 0 and right_hand_bone_idx >= 0:
 		right_arm_ik = SkeletonIK3D.new()
 		right_arm_ik.name = "RightArmIK"
-		skeleton.add_child(right_arm_ik)
 		
-		# Configure IK chain - start from upper arm, not shoulder
+		# Configure BEFORE adding to skeleton to avoid build_chain() errors
 		right_arm_ik.root_bone = skeleton.get_bone_name(right_arm_bone_idx)
 		right_arm_ik.tip_bone = skeleton.get_bone_name(right_hand_bone_idx)
-		right_arm_ik.target_node = right_arm_ik.get_path_to(right_hand_target)
-		right_arm_ik.use_magnet = true
-		right_arm_ik.magnet = Vector3(0, -1, 0)  # Pull elbow downward
-		right_arm_ik.min_distance = 0.01
-		right_arm_ik.max_iterations = 100
-		right_arm_ik.interpolation = 1.0
 		
-		if show_debug:
-			print("Right arm IK created: ", right_arm_ik.root_bone, " -> ", right_arm_ik.tip_bone)
+		# Now add to skeleton (this will trigger build_chain())
+		skeleton.add_child(right_arm_ik)
+		
+		# Finish configuration after being added to tree
+		call_deferred("_finalize_arm_ik", right_arm_ik, "Right")
+
+func _finalize_arm_ik(ik_node: SkeletonIK3D, side: String):
+	"""Finalize arm IK configuration after it's been added to the scene tree"""
+	if not ik_node or not skeleton:
+		return
+	
+	# Set target node path
+	if side == "Left":
+		ik_node.target_node = ik_node.get_path_to(left_hand_target)
+	else:
+		ik_node.target_node = ik_node.get_path_to(right_hand_target)
+	
+	# Set additional IK parameters
+	ik_node.use_magnet = true
+	ik_node.magnet = Vector3(0, -1, 0)  # Pull elbow downward
+	ik_node.min_distance = 0.01
+	ik_node.max_iterations = 100
+	ik_node.interpolation = 1.0
+	
+	if show_debug:
+		print(side, " arm IK finalized: ", ik_node.root_bone, " -> ", ik_node.tip_bone)
+	
+	# Check if both IKs are now configured
+	if left_arm_ik and right_arm_ik:
+		if left_arm_ik.root_bone != "" and right_arm_ik.root_bone != "":
+			ik_configured = true
+			if show_debug:
+				print("Both arm IKs are now configured and ready")
 
 func _process(delta: float):
 	if Engine.is_editor_hint() or not initialized or not skeleton:
@@ -393,6 +414,9 @@ func _update_head_tracking():
 
 func _update_hand_tracking():
 	# Use SkeletonIK3D for hand tracking
+	if not ik_configured:
+		return  # Wait for IK to be fully configured
+	
 	if left_controller and left_arm_ik:
 		var target_transform = smoothed_left_hand_transform if smooth_tracking else left_controller.global_transform
 		
