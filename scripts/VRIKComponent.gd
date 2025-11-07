@@ -24,8 +24,8 @@ class_name VRIKComponent
 @export_group("Tracking")
 @export var track_head: bool = true
 @export var track_hands: bool = true
-@export var smooth_tracking: bool = true
-@export var smoothing_speed: float = 15.0  # Higher = snappier tracking
+@export var smooth_tracking: bool = false  ## Enable smoothing to reduce jitter (adds slight lag)
+@export var smoothing_speed: float = 15.0  ## Higher = snappier tracking (only used if smooth_tracking enabled)
 
 # Body positioning
 @export_group("Body Settings")

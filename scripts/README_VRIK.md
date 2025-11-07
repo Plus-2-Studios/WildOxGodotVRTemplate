@@ -49,8 +49,8 @@ The component uses Godot's built-in `SkeletonIK3D` nodes for arm tracking:
 ### Tracking
 - **Track Head:** Enable head tracking from HMD
 - **Track Hands:** Enable hand/arm tracking from controllers
-- **Smooth Tracking:** Enable for smoother movement (recommended)
-- **Smoothing Speed:** Higher = snappier (try 10-20)
+- **Smooth Tracking:** Enable to reduce jitter from VR tracking noise (adds slight lag, disabled by default for 1:1 response)
+- **Smoothing Speed:** Higher = snappier tracking, only used if smooth_tracking is enabled (default: 15.0)
 
 ### Body Settings
 - **Use Locomotion Integration:** Enable to parent skeleton to VRLocomotion physics capsule (enables rotation with snap turns)
