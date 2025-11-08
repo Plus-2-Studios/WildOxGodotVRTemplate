@@ -24,6 +24,7 @@ class_name VRIKComponent
 @export_group("Tracking")
 @export var track_head: bool = true
 @export var track_hands: bool = true
+@export var track_legs: bool = true  ## Enable leg IK for crouching/squatting based on HMD height
 @export var smooth_tracking: bool = false  ## Enable smoothing to reduce jitter (adds slight lag)
 @export var smoothing_speed: float = 15.0  ## Higher = snappier tracking (only used if smooth_tracking enabled)
 
@@ -36,7 +37,8 @@ class_name VRIKComponent
 @export var align_skeleton_with_hmd: bool = true  # Automatically rotate skeleton to face HMD direction
 @export var hmd_rotation_deadzone: float = 45.0  # Degrees of HMD rotation before body starts rotating (0 = always rotate, 180 = never rotate)
 @export var body_rotation_smoothing: float = 5.0  # How smoothly the body rotates to follow HMD (higher = faster)
-@export var neck_offset: Vector3 = Vector3(0, -0.15, 0)  # Offset from HMD to neck
+@export var foot_height_offset: float = 0.0  ## Offset feet above/below ground (positive = higher, negative = lower)
+@export var foot_spacing: float = 0.3  ## Distance between feet (meters)
 
 @export_group("Hand Orientation (Euler XYZ)")
 @export var hand_rotation_x: float = -90.0  # Roll (around forward axis)
@@ -62,11 +64,6 @@ class_name VRIKComponent
 @export var head_rotation_y: float = 180.0
 @export var head_rotation_z: float = 0.0
 
-@export_group("Debug")
-@export var show_debug: bool = false
-@export var debug_on_button_press: bool = true  # Only print debug when right thumbstick clicked
-@export var show_controller_axes: bool = false  # Visualize controller coordinate axes
-
 # Bone name mappings - customize these based on your skeleton
 @export_group("Bone Mappings")
 @export var head_bone_name: String = "Head"
@@ -81,12 +78,24 @@ class_name VRIKComponent
 @export var right_forearm_bone_name: String = "RightForeArm"
 @export var right_hand_bone_name: String = "RightHand"
 @export var hips_bone_name: String = "Hips"
+@export var left_upleg_bone_name: String = "LeftUpLeg"
+@export var left_leg_bone_name: String = "LeftLeg"
+@export var left_foot_bone_name: String = "LeftFoot"
+@export var right_upleg_bone_name: String = "RightUpLeg"
+@export var right_leg_bone_name: String = "RightLeg"
+@export var right_foot_bone_name: String = "RightFoot"
 
 # Controller paths
 @export_group("VR Node Paths")
 @export_node_path("XRController3D") var left_controller_path: NodePath = "../LeftController"
 @export_node_path("XRController3D") var right_controller_path: NodePath = "../RightController"
 @export_node_path("XRCamera3D") var camera_path: NodePath = "../XRCamera3D"
+
+# Debug settings
+@export_category("Debug")
+@export var show_debug_logs: bool = false  ## Enable detailed debug logging
+@export var debug_on_button_press: bool = true  ## Only print debug info when right thumbstick clicked
+@export var show_controller_axes: bool = false  ## Visualize controller coordinate axes
 
 # Internal references
 var xr_origin: XROrigin3D
@@ -108,14 +117,24 @@ var right_arm_bone_idx: int = -1
 var right_forearm_bone_idx: int = -1
 var right_hand_bone_idx: int = -1
 var hips_bone_idx: int = -1
+var left_upleg_bone_idx: int = -1
+var left_leg_bone_idx: int = -1
+var left_foot_bone_idx: int = -1
+var right_upleg_bone_idx: int = -1
+var right_leg_bone_idx: int = -1
+var right_foot_bone_idx: int = -1
 
-# SkeletonIK3D nodes for arm IK
+# SkeletonIK3D nodes for arm and leg IK
 var left_arm_ik: SkeletonIK3D
 var right_arm_ik: SkeletonIK3D
+var left_leg_ik: SkeletonIK3D
+var right_leg_ik: SkeletonIK3D
 
-# IK targets for hands
+# IK targets for hands and feet
 var left_hand_target: Node3D
 var right_hand_target: Node3D
+var left_foot_target: Node3D
+var right_foot_target: Node3D
 
 # Smooth tracking state
 var smoothed_head_transform: Transform3D
@@ -126,6 +145,10 @@ var smoothed_right_hand_transform: Transform3D
 var target_body_rotation_y: float = 0.0  # Target rotation for the body
 var current_body_rotation_y: float = 0.0  # Current smoothed rotation
 var last_physics_body_rotation_y: float = 0.0  # Track physics body rotation to detect snap turns
+
+# HMD height tracking for leg IK
+var initial_hmd_height: float = 0.0  # Calibrated HMD height at startup
+var current_hmd_height_delta: float = 0.0  # How much HMD has moved up/down from initial
 
 # Initialization
 var initialized: bool = false
@@ -202,6 +225,8 @@ func _initialize():
 	# Initialize smoothed transforms
 	if xr_camera:
 		smoothed_head_transform = xr_camera.global_transform
+		# Calibrate initial HMD height for leg IK (use local position relative to XROrigin)
+		initial_hmd_height = xr_camera.position.y
 	if left_controller:
 		smoothed_left_hand_transform = left_controller.global_transform
 	if right_controller:
@@ -217,7 +242,7 @@ func _initialize():
 	
 	initialized = true
 	
-	if show_debug:
+	if show_debug_logs:
 		print("VRIKComponent initialized successfully")
 		print("Tracking - Head: ", track_head, " | Hands: ", track_hands, " | Smooth: ", smooth_tracking)
 
@@ -237,8 +262,14 @@ func _cache_bone_indices():
 	right_forearm_bone_idx = skeleton.find_bone(right_forearm_bone_name)
 	right_hand_bone_idx = skeleton.find_bone(right_hand_bone_name)
 	hips_bone_idx = skeleton.find_bone(hips_bone_name)
+	left_upleg_bone_idx = skeleton.find_bone(left_upleg_bone_name)
+	left_leg_bone_idx = skeleton.find_bone(left_leg_bone_name)
+	left_foot_bone_idx = skeleton.find_bone(left_foot_bone_name)
+	right_upleg_bone_idx = skeleton.find_bone(right_upleg_bone_name)
+	right_leg_bone_idx = skeleton.find_bone(right_leg_bone_name)
+	right_foot_bone_idx = skeleton.find_bone(right_foot_bone_name)
 	
-	if show_debug:
+	if show_debug_logs:
 		print("=== VRIK Bone Mapping ===")
 		print("  Head: ", head_bone_idx, " (", head_bone_name, ")")
 		print("  Neck: ", neck_bone_idx, " (", neck_bone_name, ")")
@@ -252,6 +283,12 @@ func _cache_bone_indices():
 		print("  Right Forearm: ", right_forearm_bone_idx, " (", right_forearm_bone_name, ")")
 		print("  Right Hand: ", right_hand_bone_idx, " (", right_hand_bone_name, ")")
 		print("  Hips: ", hips_bone_idx, " (", hips_bone_name, ")")
+		print("  Left UpLeg: ", left_upleg_bone_idx, " (", left_upleg_bone_name, ")")
+		print("  Left Leg: ", left_leg_bone_idx, " (", left_leg_bone_name, ")")
+		print("  Left Foot: ", left_foot_bone_idx, " (", left_foot_bone_name, ")")
+		print("  Right UpLeg: ", right_upleg_bone_idx, " (", right_upleg_bone_name, ")")
+		print("  Right Leg: ", right_leg_bone_idx, " (", right_leg_bone_name, ")")
+		print("  Right Foot: ", right_foot_bone_idx, " (", right_foot_bone_name, ")")
 		print("Bones with index -1 were not found and won't be tracked")
 		print("========================")
 
@@ -298,6 +335,45 @@ func _setup_skeleton_ik():
 		
 		# Finish configuration after being added to tree
 		call_deferred("_finalize_arm_ik", right_arm_ik, "Right")
+	
+	# Create foot IK target nodes
+	left_foot_target = Node3D.new()
+	left_foot_target.name = "LeftFootIKTarget"
+	add_child(left_foot_target)
+	
+	right_foot_target = Node3D.new()
+	right_foot_target.name = "RightFootIKTarget"
+	add_child(right_foot_target)
+	
+	# Setup left leg IK
+	if left_upleg_bone_idx >= 0 and left_foot_bone_idx >= 0:
+		left_leg_ik = SkeletonIK3D.new()
+		left_leg_ik.name = "LeftLegIK"
+		
+		# Configure BEFORE adding to skeleton to avoid build_chain() errors
+		left_leg_ik.root_bone = skeleton.get_bone_name(left_upleg_bone_idx)
+		left_leg_ik.tip_bone = skeleton.get_bone_name(left_foot_bone_idx)
+		
+		# Now add to skeleton (this will trigger build_chain())
+		skeleton.add_child(left_leg_ik)
+		
+		# Finish configuration after being added to tree
+		call_deferred("_finalize_leg_ik", left_leg_ik, "Left")
+	
+	# Setup right leg IK
+	if right_upleg_bone_idx >= 0 and right_foot_bone_idx >= 0:
+		right_leg_ik = SkeletonIK3D.new()
+		right_leg_ik.name = "RightLegIK"
+		
+		# Configure BEFORE adding to skeleton to avoid build_chain() errors
+		right_leg_ik.root_bone = skeleton.get_bone_name(right_upleg_bone_idx)
+		right_leg_ik.tip_bone = skeleton.get_bone_name(right_foot_bone_idx)
+		
+		# Now add to skeleton (this will trigger build_chain())
+		skeleton.add_child(right_leg_ik)
+		
+		# Finish configuration after being added to tree
+		call_deferred("_finalize_leg_ik", right_leg_ik, "Right")
 
 func _finalize_arm_ik(ik_node: SkeletonIK3D, side: String):
 	"""Finalize arm IK configuration after it's been added to the scene tree"""
@@ -317,15 +393,37 @@ func _finalize_arm_ik(ik_node: SkeletonIK3D, side: String):
 	ik_node.max_iterations = 100
 	ik_node.interpolation = 1.0
 	
-	if show_debug:
+	if show_debug_logs:
 		print(side, " arm IK finalized: ", ik_node.root_bone, " -> ", ik_node.tip_bone)
 	
-	# Check if both IKs are now configured
+	# Check if both arm IKs are now configured
 	if left_arm_ik and right_arm_ik:
 		if left_arm_ik.root_bone != "" and right_arm_ik.root_bone != "":
 			ik_configured = true
-			if show_debug:
+			if show_debug_logs:
 				print("Both arm IKs are now configured and ready")
+
+func _finalize_leg_ik(ik_node: SkeletonIK3D, side: String):
+	"""Finalize leg IK configuration after it's been added to the scene tree"""
+	if not ik_node or not skeleton:
+		return
+	
+	# Set target node path
+	if side == "Left":
+		ik_node.target_node = ik_node.get_path_to(left_foot_target)
+	else:
+		ik_node.target_node = ik_node.get_path_to(right_foot_target)
+	
+	# Set additional IK parameters
+	ik_node.use_magnet = true
+	ik_node.magnet = Vector3(0, 0, 1)  # Pull knee forward (in local space)
+	ik_node.min_distance = 0.01
+	ik_node.max_iterations = 100
+	ik_node.interpolation = 1.0
+	ik_node.override_tip_basis = false  # Don't let IK rotate the foot bone
+	
+	if show_debug_logs:
+		print(side, " leg IK finalized: ", ik_node.root_bone, " -> ", ik_node.tip_bone)
 
 func _process(delta: float):
 	if Engine.is_editor_hint() or not initialized or not skeleton:
@@ -351,6 +449,9 @@ func _process(delta: float):
 	
 	if track_hands:
 		_update_hand_tracking()
+	
+	if track_legs:
+		_update_leg_tracking()
 	
 	# Update body positioning
 	_update_body_position()
@@ -465,6 +566,73 @@ func _update_hand_tracking():
 		right_hand_target.global_transform = target_transform
 		right_hand_target.transform.basis = right_hand_target.transform.basis * rotation_offset
 		right_arm_ik.start()
+
+func _update_leg_tracking():
+	"""Update leg IK to keep feet grounded while allowing crouching"""
+	if not left_leg_ik or not right_leg_ik or not xr_camera or not skeleton_instance:
+		return
+	
+	# Calculate current HMD height delta from initial calibration (use local position)
+	var current_hmd_y = xr_camera.position.y
+	current_hmd_height_delta = current_hmd_y - initial_hmd_height
+	
+	# Adjust hip bone height based on HMD height change
+	# When you crouch (HMD goes down), hips should also go down
+	if hips_bone_idx >= 0:
+		var hip_rest_pose = skeleton.get_bone_rest(hips_bone_idx)
+		var hip_pose = skeleton.get_bone_pose(hips_bone_idx)
+		
+		# Adjust hip position - move down when HMD lowers
+		var adjusted_position = hip_rest_pose.origin
+		adjusted_position.y += current_hmd_height_delta
+		
+		hip_pose.origin = adjusted_position
+		skeleton.set_bone_pose_position(hips_bone_idx, hip_pose.origin)
+	
+	# Position foot targets at the ground level (capsule base or XROrigin base)
+	# Use physics body position if using locomotion integration, otherwise use XROrigin
+	var physics_body = _find_physics_body() if use_locomotion_integration else null
+	var ground_reference: Vector3
+	if physics_body:
+		# Use physics capsule base as ground reference
+		ground_reference = physics_body.global_position
+	else:
+		# Use XROrigin base as ground reference
+		ground_reference = xr_origin.global_position
+	
+	# Get the skeleton's forward direction for proper foot placement
+	var skeleton_forward = -skeleton_instance.global_transform.basis.z
+	skeleton_forward.y = 0
+	if skeleton_forward.length() > 0.001:
+		skeleton_forward = skeleton_forward.normalized()
+	else:
+		skeleton_forward = Vector3.FORWARD
+	
+	var skeleton_right = skeleton_instance.global_transform.basis.x
+	skeleton_right.y = 0
+	skeleton_right = skeleton_right.normalized()
+	
+	# Apply body forward offset to match skeleton position
+	var foot_base_position = ground_reference + (skeleton_forward * body_forward_offset)
+	
+	# Set foot target rotations to match skeleton rotation (so they rotate with snap turns)
+	var skeleton_rotation_y = skeleton_instance.global_rotation.y
+	
+	# Left foot target - positioned to the left at ground level
+	# Use positive spacing with skeleton_right to place left foot to character's LEFT
+	left_foot_target.global_position = foot_base_position + (skeleton_right * foot_spacing / 2.0)
+	left_foot_target.global_position.y = ground_reference.y + foot_height_offset
+	left_foot_target.rotation.y = skeleton_rotation_y
+	
+	# Right foot target - positioned to the right at ground level
+	# Use negative spacing to place right foot to character's RIGHT
+	right_foot_target.global_position = foot_base_position + (skeleton_right * -foot_spacing / 2.0)
+	right_foot_target.global_position.y = ground_reference.y + foot_height_offset
+	right_foot_target.rotation.y = skeleton_rotation_y
+	
+	# Solve leg IK to bend knees and keep feet planted
+	left_leg_ik.start()
+	right_leg_ik.start()
 
 func _update_body_position():
 	if not skeleton_instance or not xr_camera:
@@ -605,6 +773,11 @@ func _load_skeletal_mesh():
 		physics_body.add_child(skeleton_instance)
 		skeleton_needs_reparenting = false
 		
+		if show_debug_logs:
+			print("=== SKELETON INITIALIZATION ===")
+			print("Physics body position: ", physics_body.global_position)
+			print("Skeleton default local position: ", skeleton_instance.position)
+		
 		# Set initial local rotation relative to capsule
 		if align_skeleton_with_hmd and xr_camera:
 			# Get HMD forward direction
@@ -624,7 +797,7 @@ func _load_skeletal_mesh():
 			# No HMD alignment - face forward relative to capsule (180° from default)
 			skeleton_instance.rotation.y = PI
 		
-		if show_debug:
+		if show_debug_logs:
 			print("VRIKComponent: Skeleton parented to physics body (locomotion integration)")
 	else:
 		# Physics body doesn't exist yet or integration disabled - parent to XROrigin
@@ -641,7 +814,7 @@ func _load_skeletal_mesh():
 			var angle = skeleton_forward.signed_angle_to(hmd_forward, Vector3.UP)
 			skeleton_instance.rotation.y = angle
 		
-		if show_debug:
+		if show_debug_logs:
 			if use_locomotion_integration:
 				print("VRIKComponent: Physics body not found yet, will retry reparenting...")
 			else:
@@ -655,16 +828,16 @@ func _load_skeletal_mesh():
 	skeleton = _find_skeleton_recursive(skeleton_instance)
 	
 	if skeleton:
-		if show_debug:
+		if show_debug_logs:
 			print("Loaded skeletal mesh and found Skeleton3D at: ", skeleton.get_path())
 		
 		# Try to auto-configure bone names
 		if _auto_configure_bones():
-			if show_debug:
+			if show_debug_logs:
 				print("Successfully auto-configured bone mappings!")
 		else:
 			print("WARNING: Could not auto-detect bones. Please manually configure bone names.")
-			if show_debug:
+			if show_debug_logs:
 				_print_all_bones()
 		
 		_cache_bone_indices()
@@ -840,7 +1013,7 @@ func _try_reparent_to_physics_body():
 		
 		skeleton_needs_reparenting = false
 		
-		if show_debug:
+		if show_debug_logs:
 			print("VRIKComponent: Successfully reparented skeleton to physics body!")
 			print("  Skeleton local rotation Y: ", skeleton_instance.rotation_degrees.y)
 			print("  Physics body rotation Y: ", physics_body.rotation_degrees.y)
@@ -912,6 +1085,24 @@ func _auto_configure_bones() -> bool:
 				suggestions["right_forearm_bone_name"] = bone_name
 			elif "hand" in lower and "end" not in lower and "thumb" not in lower and "index" not in lower and "middle" not in lower and "ring" not in lower and "pinky" not in lower and not "right_hand_bone_name" in suggestions:
 				suggestions["right_hand_bone_name"] = bone_name
+		
+		# Left leg bones
+		if "left" in lower or bone_name.begins_with("L_") or bone_name.begins_with("L.") or ".l" in lower:
+			if ("upleg" in lower or "upperleg" in lower or "thigh" in lower) and not "left_upleg_bone_name" in suggestions:
+				suggestions["left_upleg_bone_name"] = bone_name
+			elif ("leg" in lower or "calf" in lower or "shin" in lower) and "upleg" not in lower and "upper" not in lower and "thigh" not in lower and not "left_leg_bone_name" in suggestions:
+				suggestions["left_leg_bone_name"] = bone_name
+			elif "foot" in lower and "end" not in lower and "toe" not in lower and not "left_foot_bone_name" in suggestions:
+				suggestions["left_foot_bone_name"] = bone_name
+		
+		# Right leg bones
+		if "right" in lower or bone_name.begins_with("R_") or bone_name.begins_with("R.") or ".r" in lower:
+			if ("upleg" in lower or "upperleg" in lower or "thigh" in lower) and not "right_upleg_bone_name" in suggestions:
+				suggestions["right_upleg_bone_name"] = bone_name
+			elif ("leg" in lower or "calf" in lower or "shin" in lower) and "upleg" not in lower and "upper" not in lower and "thigh" not in lower and not "right_leg_bone_name" in suggestions:
+				suggestions["right_leg_bone_name"] = bone_name
+			elif "foot" in lower and "end" not in lower and "toe" not in lower and not "right_foot_bone_name" in suggestions:
+				suggestions["right_foot_bone_name"] = bone_name
 	
 	# Apply detected bone names
 	if suggestions.has("head_bone_name"):
@@ -949,6 +1140,24 @@ func _auto_configure_bones() -> bool:
 		found_count += 1
 	if suggestions.has("right_hand_bone_name"):
 		right_hand_bone_name = suggestions["right_hand_bone_name"]
+		found_count += 1
+	if suggestions.has("left_upleg_bone_name"):
+		left_upleg_bone_name = suggestions["left_upleg_bone_name"]
+		found_count += 1
+	if suggestions.has("left_leg_bone_name"):
+		left_leg_bone_name = suggestions["left_leg_bone_name"]
+		found_count += 1
+	if suggestions.has("left_foot_bone_name"):
+		left_foot_bone_name = suggestions["left_foot_bone_name"]
+		found_count += 1
+	if suggestions.has("right_upleg_bone_name"):
+		right_upleg_bone_name = suggestions["right_upleg_bone_name"]
+		found_count += 1
+	if suggestions.has("right_leg_bone_name"):
+		right_leg_bone_name = suggestions["right_leg_bone_name"]
+		found_count += 1
+	if suggestions.has("right_foot_bone_name"):
+		right_foot_bone_name = suggestions["right_foot_bone_name"]
 		found_count += 1
 	
 	# Return true if we found at least head and both hands

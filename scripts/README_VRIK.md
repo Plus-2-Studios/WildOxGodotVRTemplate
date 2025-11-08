@@ -27,11 +27,21 @@ That's it! Your skeletal mesh will follow your VR movements with proper arm IK.
 
 ## How It Works
 
-The component uses Godot's built-in `SkeletonIK3D` nodes for arm tracking:
+The component uses Godot's built-in `SkeletonIK3D` nodes for arm and leg tracking:
+
+### Arm Tracking
 - **SkeletonIK3D** is created for each arm chain (upper arm → forearm → hand)
 - **IK targets** follow your VR controllers with rotation and position offsets applied
 - **Magnet property** pulls elbows downward for natural arm poses
 - Shoulders remain fixed while arms bend naturally to reach targets
+
+### Leg Tracking (Crouching/Squatting)
+- **SkeletonIK3D** is created for each leg chain (thigh → calf → foot)
+- **HMD height tracking** measures how much you crouch down
+- **Hip bone adjustment** - your character's hips lower when you crouch
+- **Foot targets** stay planted on the ground
+- **Leg IK** naturally bends knees to bridge the distance between lowered hips and grounded feet
+- This creates realistic crouching where the whole upper body lowers while feet stay planted
 
 ### Integration with VRLocomotion
 - Enable **Use Locomotion Integration** to parent the skeleton to the VRLocomotion physics capsule
@@ -49,6 +59,7 @@ The component uses Godot's built-in `SkeletonIK3D` nodes for arm tracking:
 ### Tracking
 - **Track Head:** Enable head tracking from HMD
 - **Track Hands:** Enable hand/arm tracking from controllers
+- **Track Legs:** Enable leg IK for crouching/squatting based on HMD height changes
 - **Smooth Tracking:** Enable to reduce jitter from VR tracking noise (adds slight lag, disabled by default for 1:1 response)
 - **Smoothing Speed:** Higher = snappier tracking, only used if smooth_tracking is enabled (default: 15.0)
 
@@ -57,7 +68,10 @@ The component uses Godot's built-in `SkeletonIK3D` nodes for arm tracking:
 - **Body Height Offset:** Vertical position adjustment (start with 0, adjust as needed)
 - **Body Forward Offset:** Forward/backward position adjustment relative to skeleton facing (positive = forward, negative = backward)
 - **Align Skeleton With HMD:** Rotate skeleton to face HMD direction
-- **Neck Offset:** Offset from HMD to neck position
+- **HMD Rotation Deadzone:** Degrees of HMD rotation before body starts rotating (default: 45°, prevents body from rotating with every small head turn)
+- **Body Rotation Smoothing:** How smoothly the body rotates to follow HMD (higher = faster, default: 5.0)
+- **Foot Height Offset:** Offset feet above/below ground level (positive = higher, negative = lower)
+- **Foot Spacing:** Distance between feet in meters (default: 0.3m)
 
 ### Hand Orientation
 - **Hand Rotation X/Y/Z:** Euler angles to rotate hands (in degrees)
@@ -68,9 +82,9 @@ The component uses Godot's built-in `SkeletonIK3D` nodes for arm tracking:
 - **Override Right Hand:** Use separate rotation and position settings for right hand
 
 ### Debug
-- **Show Debug:** Print bone mapping and tracking info to console
-- **Debug On Button Press:** Only print debug when right thumbstick is clicked
-- **Show Controller Axes:** Visualize controller coordinate axes
+- **Show Debug Logs:** Enable detailed debug logging to console (bone mappings, IK initialization, etc.)
+- **Debug On Button Press:** Only print debug info when right thumbstick is clicked
+- **Show Controller Axes:** Visualize controller coordinate axes (for debugging hand orientation)
 
 ### Bone Mappings
 The component auto-detects bone names for Mixamo skeletons. You can manually override these:
@@ -78,10 +92,13 @@ The component auto-detects bone names for Mixamo skeletons. You can manually ove
 - **Neck Bone Name:** Neck bone (default: auto-detected)
 - **Spine Bone Name:** Spine bone (default: auto-detected)
 - **Left/Right Shoulder Bone Name:** Shoulder bones
-- **Left/Right Arm Bone Name:** Upper arm bones (IK chain starts here)
+- **Left/Right Arm Bone Name:** Upper arm bones (arm IK chain starts here)
 - **Left/Right Forearm Bone Name:** Forearm bones
-- **Left/Right Hand Bone Name:** Hand bones (IK chain ends here)
+- **Left/Right Hand Bone Name:** Hand bones (arm IK chain ends here)
 - **Hips Bone Name:** Hip/pelvis bone
+- **Left/Right UpLeg Bone Name:** Thigh bones (leg IK chain starts here)
+- **Left/Right Leg Bone Name:** Calf/shin bones
+- **Left/Right Foot Bone Name:** Foot bones (leg IK chain ends here)
 
 ## Tips
 
@@ -100,6 +117,14 @@ The component auto-detects bone names for Mixamo skeletons. You can manually ove
 - The IK system uses the bone chain: **Upper Arm → Forearm → Hand**
 - Shoulders stay fixed while arms bend naturally
 - If elbows point wrong, the SkeletonIK3D `magnet` property controls elbow direction (currently set to pull downward)
+
+### Leg Tracking & Crouching
+- The system calibrates your initial HMD height at startup
+- When you crouch (HMD goes lower), the hip bone lowers by the same amount
+- Foot targets stay planted on the ground
+- Leg IK bends the knees to reach between lowered hips and grounded feet
+- Adjust **Foot Height Offset** if feet sink into or float above the ground
+- Adjust **Foot Spacing** to change stance width
 
 ### Performance
 - Smooth tracking adds slight latency but looks better

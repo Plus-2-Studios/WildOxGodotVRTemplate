@@ -6,29 +6,34 @@ class_name VRPhysicsLocomotion
 ## Can be attached to an XROrigin3D and used like a Movement Component (Node)
 
 # Movement settings
+@export_group("Movement")
 @export var speed: float = 2.0  # Movement speed
 @export var sprint_multiplier: float = 2.0  # How much faster sprinting is
 @export var toggle_sprint_mode: bool = true  # If true, sprint toggle, if false, hold to sprint
-@export var smooth_turn_speed: float = 45.0  # Degrees per second for smooth turning
-@export var snap_turn_degrees: float = 30.0  # Degrees per snap turn
-@export var use_smooth_turning: bool = false  # Set to true for smooth turning, false for snap turning
 @export var deadzone: float = 0.2  # Ignore small thumbstick movements
 @export var gravity: float = 9.8  # Gravity strength
 @export var jump_strength: float = 4.0  # Jump force when jumping
 @export var allow_jumping: bool = true  # Enable/disable jumping functionality
 @export var hmd_height_offset: float = 0.0  # Adjusts camera height: positive = higher, negative = lower
 
-# Physics settings
+@export_group("Turning")
+@export var use_smooth_turning: bool = false  # Set to true for smooth turning, false for snap turning
+@export var smooth_turn_speed: float = 45.0  # Degrees per second for smooth turning
+@export var snap_turn_degrees: float = 30.0  # Degrees per snap turn
+
+@export_group("Physics")
 @export var capsule_radius: float = 0.3  # Radius of the player's collision capsule
 @export var capsule_height: float = 1.8  # Height of the player's collision capsule
-@export var show_capsule: bool = true  # Whether to show the capsule mesh (for debugging)
-@export var capsule_opacity: float = 0.8  # Opacity of the capsule mesh (0.0 - 1.0)
-@export var capsule_color: Color = Color(1.0, 0.0, 0.0, 0.8)  # Color of the capsule (red by default)
 
-# Controller paths (update these if your controller nodes have different names)
+@export_group("VR Node Paths")
 @export_node_path("XRController3D") var left_controller_path: NodePath = "../LeftController"
 @export_node_path("XRController3D") var right_controller_path: NodePath = "../RightController" 
 @export_node_path("XRCamera3D") var camera_path: NodePath = "../XRCamera3D"
+
+@export_category("Debug")
+@export var show_capsule: bool = true  # Whether to show the capsule mesh (for debugging)
+@export var capsule_color: Color = Color(1.0, 0.0, 0.0, 0.8)  # Color of the capsule (red by default)
+@export var show_debug_logs: bool = false  # Enable detailed debug logging
 
 # Internal nodes
 var physics_body: CharacterBody3D
@@ -51,6 +56,7 @@ var initialized: bool = false
 var last_origin_position: Vector3 = Vector3.ZERO
 var physical_movement: Vector3 = Vector3.ZERO
 var initial_camera_local_pos = Vector3.ZERO
+var initial_capsule_global_pos = Vector3.ZERO
 var has_done_initial_setup = false
 
 # Variables for snap turning cooldown
@@ -135,7 +141,8 @@ func _initialize():
 		right_controller.input_vector2_changed.connect(_on_controller_input_vector2_changed.bind(right_controller))
 	
 	initialized = true
-	print("VR Physics Locomotion initialized successfully")
+	if show_debug_logs:
+		print("VR Physics Locomotion initialized successfully")
 
 func _exit_tree():
 	# Clean up the physics body when the node is removed
@@ -143,7 +150,8 @@ func _exit_tree():
 		physics_body.queue_free()
 
 func _create_physics_body():
-	print("Creating physics body...")
+	if show_debug_logs:
+		print("Creating physics body...")
 	
 	# Create a CharacterBody3D for physics
 	physics_body = CharacterBody3D.new()
@@ -185,26 +193,58 @@ func _create_physics_body():
 		capsule_mesh.position = collision_shape.position
 		
 		physics_body.add_child(capsule_mesh)
-		print("Added capsule mesh with color: ", capsule_color)
+		if show_debug_logs:
+			print("Added capsule mesh with color: ", capsule_color)
 	
 	# Add to scene at the same level as the XROrigin
 	var parent_node = get_parent().get_parent()
-	print("Adding physics body to: ", parent_node.name)
+	if show_debug_logs:
+		print("Adding physics body to: ", parent_node.name)
 	parent_node.add_child(physics_body)
-	print("Physics body added, in tree: ", physics_body.is_inside_tree())
+	if show_debug_logs:
+		print("Physics body added, in tree: ", physics_body.is_inside_tree())
 	
-	# Match position with XROrigin
-	if xr_origin and is_instance_valid(xr_origin):
-		# Calculate where the bottom of the capsule should be
-		var floor_position = xr_origin.global_position.y
+	# Position capsule and initialize camera tracking
+	if xr_origin and is_instance_valid(xr_origin) and xr_camera and is_instance_valid(xr_camera):
+		# Capture initial camera local position NOW (before physics process runs)
+		initial_camera_local_pos = xr_camera.transform.origin
+		has_done_initial_setup = true
 		
-		physics_body.global_position = Vector3(
-			xr_origin.global_position.x,
-			floor_position - capsule_height/2 + 0.1,  # Small offset to ensure it starts above ground
-			xr_origin.global_position.z
-		)
+		if show_debug_logs:
+			print("=== PHYSICS BODY INITIALIZATION ===")
+			print("XROrigin global position: ", xr_origin.global_position)
+			print("XROrigin rotation: ", xr_origin.rotation)
+			print("XRCamera global position: ", xr_camera.global_position)
+			print("XRCamera local position (transform.origin): ", xr_camera.transform.origin)
+			print("Initial camera local pos captured: ", initial_camera_local_pos)
+		
+		# Calculate the rotated movement based on this initial position
+		var local_movement = initial_camera_local_pos
+		var rotated_movement = local_movement.rotated(Vector3.UP, xr_origin.rotation.y)
+		
+		if show_debug_logs:
+			print("Local movement: ", local_movement)
+			print("Rotated movement: ", rotated_movement)
+		
+		# Position capsule at HMD horizontal position
+		var floor_position = xr_origin.global_position.y
+		var target_x = xr_origin.global_position.x + rotated_movement.x
+		var target_y = floor_position - capsule_height/2 + 0.1
+		var target_z = xr_origin.global_position.z + rotated_movement.z
+		
+		if show_debug_logs:
+			print("Target capsule position: (", target_x, ", ", target_y, ", ", target_z, ")")
+		
+		physics_body.global_position = Vector3(target_x, target_y, target_z)
 		physics_body.global_rotation = xr_origin.global_rotation
-		print("Initial physics body position: ", physics_body.global_position)
+		
+		# Store the initial capsule position for use in physics process
+		initial_capsule_global_pos = physics_body.global_position
+		
+		if show_debug_logs:
+			print("Final physics body position: ", physics_body.global_position)
+			print("Initial capsule stored: ", initial_capsule_global_pos)
+			print("=====================================")
 
 func _process(delta):
 	if Engine.is_editor_hint() or not initialized:
@@ -248,14 +288,15 @@ func _process(delta):
 		is_sprinting = left_thumbstick_pressed
 	
 	# Debug output every 2 seconds
-	debug_timer += delta
-	if debug_timer >= 2.0 and physics_body and is_instance_valid(physics_body):
-		debug_timer = 0.0
-		print("Physics body Y position: ", physics_body.global_position.y)
-		print("On floor: ", physics_body.is_on_floor())
-		print("Vertical velocity: ", vertical_velocity)
-		print("Sprinting: ", is_sprinting, " (", "Toggle Mode" if toggle_sprint_mode else "Hold Mode", ")")
-		print("Capsule visible: ", show_capsule and is_instance_valid(capsule_mesh))
+	if show_debug_logs:
+		debug_timer += delta
+		if debug_timer >= 2.0 and physics_body and is_instance_valid(physics_body):
+			debug_timer = 0.0
+			print("Physics body Y position: ", physics_body.global_position.y)
+			print("On floor: ", physics_body.is_on_floor())
+			print("Vertical velocity: ", vertical_velocity)
+			print("Sprinting: ", is_sprinting, " (", "Toggle Mode" if toggle_sprint_mode else "Hold Mode", ")")
+			print("Capsule visible: ", show_capsule and is_instance_valid(capsule_mesh))
 
 func _physics_process(delta):
 	if Engine.is_editor_hint() or not initialized:
@@ -275,20 +316,36 @@ func _physics_process(delta):
 	
 	# One-time setup to record initial camera position
 	if not has_done_initial_setup:
+		if show_debug_logs:
+			print("WARNING: Physics process capturing initial_camera_local_pos (should have been done in _create_physics_body)")
 		initial_camera_local_pos = xr_camera.transform.origin
 		has_done_initial_setup = true
 	
-	# Calculate camera movement in LOCAL space (relative to the XROrigin)
-	# This means leaning will be properly interpreted in the rotated space
+	# Keep capsule directly under HMD using global position
+	# This works even when XROrigin moves because we use absolute world coordinates
+	physics_body.global_position.x = xr_camera.global_position.x
+	physics_body.global_position.z = xr_camera.global_position.z
+	
+	# Calculate rotated_movement for the XROrigin update later
+	# This is the offset from XROrigin to the camera in rotated space
 	var current_local_pos = xr_camera.transform.origin
-	var local_movement = current_local_pos - initial_camera_local_pos
+	var rotated_movement = current_local_pos.rotated(Vector3.UP, xr_origin.rotation.y)
 	
-	# Now transform this local movement to world space based on XROrigin's rotation
-	var rotated_movement = local_movement.rotated(Vector3.UP, xr_origin.rotation.y)
-	
-	# Use this rotated movement to position the physics body
-	physics_body.global_position.x = xr_origin.global_position.x + rotated_movement.x
-	physics_body.global_position.z = xr_origin.global_position.z + rotated_movement.z
+	# Debug first frame position update
+	if show_debug_logs:
+		var frame_count = Engine.get_physics_frames()
+		if frame_count < 5:  # Log first few frames
+			print("=== PHYSICS PROCESS FRAME ", frame_count, " ===")
+			print("XROrigin global position: ", xr_origin.global_position)
+			print("XRCamera local pos: ", current_local_pos)
+			print("XRCamera global pos: ", xr_camera.global_position)
+			print("Rotated movement: ", rotated_movement)
+			print("Physics body position: ", physics_body.global_position)
+			var horizontal_distance = Vector2(
+				xr_camera.global_position.x - physics_body.global_position.x,
+				xr_camera.global_position.z - physics_body.global_position.z
+			).length()
+			print("Horizontal distance HMD to capsule: ", horizontal_distance, " meters")
 	
 	# ---- HANDLE THUMBSTICK MOVEMENT ----
 	# Reset movement direction for thumbstick-based movement
