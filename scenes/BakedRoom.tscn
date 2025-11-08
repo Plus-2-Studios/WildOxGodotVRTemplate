@@ -74,7 +74,7 @@
 [ext_resource type="ArrayMesh" uid="uid://cat1kincgr14p" path="res://assets/bedroom/meshes/bedroom_Pic3-.res" id="71_kgw42"]
 [ext_resource type="ArrayMesh" uid="uid://bdqdudiislcl2" path="res://assets/bedroom/meshes/bedroom_Pic4-.res" id="72_60gsk"]
 [ext_resource type="ArrayMesh" uid="uid://cx05d7adv6eu3" path="res://assets/bedroom/meshes/bedroom_Windows-.res" id="73_x54qx"]
-[ext_resource type="PackedScene" uid="uid://d2w7np4afrg4r" path="res://assets/skeletalmesh/T-Pose.fbx" id="75_lpi73"]
+[ext_resource type="PackedScene" uid="uid://bvqc8m5lx7vqw" path="res://scenes/debug/SkeletonDebugMirror.tscn" id="76_ts1h7"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1daua"]
 albedo_color = Color(0.458405, 0.458405, 0.458405, 1)
@@ -1899,5 +1899,5 @@ directional = true
 interior = true
 light_data = ExtResource("46_yh3i4")
 
-[node name="T-Pose" parent="." instance=ExtResource("75_lpi73")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.3487895, -0.6998977, -3.0206363)
+[node name="SkeletonDebugMirror" parent="." instance=ExtResource("76_ts1h7")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.18386269, -0.71337813, -2.936)
