@@ -1,4 +1,4 @@
-[gd_scene load_steps=164 format=4 uid="uid://cval6fxkfvenc"]
+[gd_scene load_steps=165 format=4 uid="uid://cval6fxkfvenc"]
 
 [ext_resource type="Script" uid="uid://h5ktq382xcfd" path="res://scripts/main_vr_init.gd" id="1_dphc6"]
 [ext_resource type="Texture2D" uid="uid://bw6v4d6agwcyp" path="res://assets/textures/tilenormal.jpg" id="2_d38gg"]
@@ -74,6 +74,7 @@
 [ext_resource type="ArrayMesh" uid="uid://cat1kincgr14p" path="res://assets/bedroom/meshes/bedroom_Pic3-.res" id="71_kgw42"]
 [ext_resource type="ArrayMesh" uid="uid://bdqdudiislcl2" path="res://assets/bedroom/meshes/bedroom_Pic4-.res" id="72_60gsk"]
 [ext_resource type="ArrayMesh" uid="uid://cx05d7adv6eu3" path="res://assets/bedroom/meshes/bedroom_Windows-.res" id="73_x54qx"]
+[ext_resource type="PackedScene" uid="uid://bvqc8m5lx7vqw" path="res://scenes/debug/SkeletonDebugMirror.tscn" id="76_ts1h7"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1daua"]
 albedo_color = Color(0.458405, 0.458405, 0.458405, 1)
@@ -1885,14 +1886,10 @@ environment = SubResource("Environment_8h30a")
 [node name="OmniLight3D" type="OmniLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.94511, 1.80769, -0.404433)
 light_color = Color(1, 1, 0.956863, 1)
-light_energy = 8.676
-light_indirect_energy = 3.811
 light_bake_mode = 1
 shadow_enabled = true
-shadow_bias = 0.0
 shadow_opacity = 0.59
 omni_range = 6.623
-omni_attenuation = -0.081
 
 [node name="LightmapGI" type="LightmapGI" parent="."]
 transform = Transform3D(0.996234, -0.0867037, 0, 0.0867037, 0.996234, 0, 0, 0, 1, 0, 0, 0)
@@ -1901,3 +1898,6 @@ bounces = 10
 directional = true
 interior = true
 light_data = ExtResource("46_yh3i4")
+
+[node name="SkeletonDebugMirror" parent="." instance=ExtResource("76_ts1h7")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.18386269, -0.71337813, -2.936)

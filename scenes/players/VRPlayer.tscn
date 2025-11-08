@@ -1,8 +1,10 @@
-[gd_scene load_steps=13 format=3 uid="uid://b8qu42svaivr1"]
+[gd_scene load_steps=15 format=3 uid="uid://b8qu42svaivr1"]
 
 [ext_resource type="Script" uid="uid://ctq8034oi4wau" path="res://raycast.gd" id="1_r2c84"]
 [ext_resource type="Script" uid="uid://0obl2pnek78a" path="res://scripts/VRHandCollider.gd" id="2_ke4ib"]
 [ext_resource type="Script" uid="uid://gvf05fwc3p2p" path="res://scripts/VRLocomotion.gd" id="2_uvuj7"]
+[ext_resource type="Script" uid="uid://ci025t0r4hqgh" path="res://scripts/VRIKComponent.gd" id="4_3ifg7"]
+[ext_resource type="PackedScene" uid="uid://d2w7np4afrg4r" path="res://assets/skeletalmesh/T-Pose.fbx" id="5_xi0i4"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_ti1y2"]
 top_radius = 0.005
@@ -14,11 +16,11 @@ shading_mode = 0
 [sub_resource type="SphereShape3D" id="SphereShape3D_2p3jf"]
 radius = 0.05
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mo4i7"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3ifg7"]
 transparency = 1
 albedo_color = Color(0.148614, 0.726923, 0.952147, 0.4)
 
-[sub_resource type="SphereMesh" id="SphereMesh_74xla"]
+[sub_resource type="SphereMesh" id="SphereMesh_xi0i4"]
 radius = 0.05
 height = 0.1
 
@@ -29,11 +31,11 @@ bottom_radius = 0.005
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nfdh3"]
 shading_mode = 0
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3ifg7"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gjx8d"]
 transparency = 1
 albedo_color = Color(0.734906, 0.0676843, 0.198859, 0.4)
 
-[sub_resource type="SphereMesh" id="SphereMesh_xi0i4"]
+[sub_resource type="SphereMesh" id="SphereMesh_wi1mb"]
 radius = 0.05
 height = 0.1
 
@@ -69,8 +71,8 @@ metadata/_custom_type_script = "uid://0obl2pnek78a"
 shape = SubResource("SphereShape3D_2p3jf")
 
 [node name="DebugMesh" type="MeshInstance3D" parent="LeftController/VRHandCollider"]
-material_override = SubResource("StandardMaterial3D_mo4i7")
-mesh = SubResource("SphereMesh_74xla")
+material_override = SubResource("StandardMaterial3D_3ifg7")
+mesh = SubResource("SphereMesh_xi0i4")
 
 [node name="RightController" type="XRController3D" parent="."]
 tracker = &"right_hand"
@@ -100,8 +102,8 @@ metadata/_custom_type_script = "uid://0obl2pnek78a"
 shape = SubResource("SphereShape3D_2p3jf")
 
 [node name="DebugMesh" type="MeshInstance3D" parent="RightController/VRHandCollider"]
-material_override = SubResource("StandardMaterial3D_3ifg7")
-mesh = SubResource("SphereMesh_xi0i4")
+material_override = SubResource("StandardMaterial3D_gjx8d")
+mesh = SubResource("SphereMesh_wi1mb")
 
 [node name="VRLocomotion" type="Node" parent="."]
 script = ExtResource("2_uvuj7")
@@ -111,3 +113,20 @@ toggle_sprint_mode = false
 show_capsule = false
 capsule_color = Color(0.501242, 0.634331, 0.935977, 0.8)
 metadata/_custom_type_script = "uid://gvf05fwc3p2p"
+
+[node name="VRIKComponent" type="Node" parent="."]
+script = ExtResource("4_3ifg7")
+skeletal_mesh_scene = ExtResource("5_xi0i4")
+body_forward_offset = 0.15
+hmd_rotation_deadzone = 35.0
+foot_height_offset = 0.1
+hand_rotation_x = -91.59
+hand_rotation_y = 73.175
+hand_rotation_z = -51.255
+hand_position_offset = Vector3(-0.045, 0.055, 0.045)
+right_hand_rotation_x = -131.88
+right_hand_rotation_y = -92.495
+right_hand_rotation_z = -6.425
+debug_on_button_press = false
+show_controller_axes = true
+metadata/_custom_type_script = "uid://ci025t0r4hqgh"
