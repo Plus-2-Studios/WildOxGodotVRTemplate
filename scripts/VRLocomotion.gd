@@ -7,7 +7,7 @@ class_name VRPhysicsLocomotion
 
 # Movement settings
 @export_group("Movement")
-@export var speed: float = 2.0  # Movement speed
+@export var speed: float = 3.0  # Movement speed
 @export var sprint_multiplier: float = 2.0  # How much faster sprinting is
 @export var toggle_sprint_mode: bool = true  # If true, sprint toggle, if false, hold to sprint
 @export var deadzone: float = 0.2  # Ignore small thumbstick movements
